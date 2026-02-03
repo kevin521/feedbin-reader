@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feedbin Reader</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 18px;
+            line-height: 1.6;
+            background: #fff;
+            color: #000;
+            max-width: 100%;
+            padding: 10px;
+        }
+
+        .nav {
+            border-bottom: 1px solid #000;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+
+        .nav select {
+            font-size: 16px;
+            padding: 8px;
+            border: 2px solid #000;
+            background: #fff;
+            width: 100%;
+            font-family: Georgia, serif;
+        }
+
+        .header {
+            border-bottom: 2px solid #000;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        .meta {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            line-height: 1.3;
+            margin-bottom: 10px;
+        }
+
+        .title-link {
+            color: #000;
+            text-decoration: none;
+        }
+
+        .title-link:active {
+            text-decoration: underline;
+        }
+
+        .progress {
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        .content {
+            margin-bottom: 20px;
+        }
+
+        .content p {
+            margin-bottom: 1em;
+        }
+
+        .content br {
+            display: block;
+            margin-bottom: 0.5em;
+            content: "";
+        }
+
+        .content img {
+            max-width: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            display: block;
+            margin: 10px auto;
+        }
+
+        .content a {
+            color: #000;
+            text-decoration: underline;
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #fff;
+            border-top: 2px solid #000;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            gap: 5px;
+        }
+
+        .controls form {
+            flex: 1;
+        }
+
+        .controls button {
+            width: 100%;
+            padding: 15px 5px;
+            font-size: 14px;
+            font-weight: bold;
+            background: #fff;
+            border: 2px solid #000;
+            cursor: pointer;
+        }
+
+        .controls button:active {
+            background: #000;
+            color: #fff;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 50px 20px;
+            font-size: 24px;
+        }
+
+        /* Keyboard nav hint */
+        .hint {
+            font-size: 11px;
+            text-align: center;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        /* Add padding at bottom for fixed controls */
+        .content {
+            padding-bottom: 80px;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <select onchange="window.location.href=this.value">
+            <option value="/" {% if not feed_filter %}selected{% endif %}>All Feeds ({{ total }} unread)</option>
+            {% for feed_id, title in subscriptions|dictsort(by='value') %}
+            <option value="/?feed={{ feed_id }}" {% if feed_filter == feed_id %}selected{% endif %}>{{ title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    {% if entry %}
+    <div class="header">
+        <div class="meta">
+            {{ entry.feed_title }} &bull; {{ entry.published[:10] if entry.published else 'Unknown date' }}
+        </div>
+        <a href="{{ entry.url }}" target="_blank" class="title-link">
+            <div class="title">{{ entry.title or 'Untitled' }}</div>
+        </a>
+        <div class="progress">{{ position + 1 }} / {{ total }} unread</div>
+    </div>
+
+    <div class="content">
+        {{ entry.display_content | safe }}
+    </div>
+
+    <div class="controls">
+        <form method="POST" action="/prev">
+            <input type="hidden" name="position" value="{{ position }}">
+            <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
+            <button type="submit">&larr; PREV</button>
+        </form>
+
+        <form method="POST" action="/mark_read_next">
+            <input type="hidden" name="entry_id" value="{{ entry.id }}">
+            <input type="hidden" name="position" value="{{ position }}">
+            <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
+            <button type="submit">&#10003; READ</button>
+        </form>
+
+        <form method="POST" action="/star">
+            <input type="hidden" name="entry_id" value="{{ entry.id }}">
+            <input type="hidden" name="position" value="{{ position }}">
+            <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
+            <button type="submit">&#9733; STAR</button>
+        </form>
+
+        <form method="POST" action="/skip">
+            <input type="hidden" name="position" value="{{ position }}">
+            <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
+            <button type="submit">SKIP &rarr;</button>
+        </form>
+    </div>
+
+    <div class="hint">Arrow keys: Left/Right to navigate, Enter to mark read</div>
+
+    <script>
+        // Keyboard navigation
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowLeft') {
+                document.querySelector('form[action="/prev"] button').click();
+            } else if (e.key === 'ArrowRight') {
+                document.querySelector('form[action="/skip"] button').click();
+            } else if (e.key === 'Enter') {
+                document.querySelector('form[action="/mark_read_next"] button').click();
+            } else if (e.key === 's' || e.key === 'S') {
+                document.querySelector('form[action="/star"] button').click();
+            }
+        });
+    </script>
+
+    {% else %}
+    <div class="empty">
+        &#10003; All caught up!<br>
+        <small>No unread articles{% if feed_filter %} in this feed{% endif %}</small>
+    </div>
+    {% endif %}
+</body>
+</html>
