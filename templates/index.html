@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Feedbin Reader</title>
+    <title>Paperbin</title>
     <style>
         * {
             margin: 0;
@@ -11,52 +11,205 @@
             box-sizing: border-box;
         }
 
+        :root {
+            --bg: #fff;
+            --text: #000;
+            --text-muted: #333;
+            --text-hint: #666;
+            --border: #000;
+            --font-size: 18px;
+            --max-width: 100%;
+        }
+
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e0e0e0;
+            --text-muted: #aaa;
+            --text-hint: #888;
+            --border: #444;
+        }
+
+        [data-fontsize="small"] { --font-size: 14px; }
+        [data-fontsize="medium"] { --font-size: 18px; }
+        [data-fontsize="large"] { --font-size: 22px; }
+
+        [data-maxwidth="limited"] { --max-width: 700px; }
+        [data-maxwidth="full"] { --max-width: 100%; }
+
         body {
             font-family: Georgia, 'Times New Roman', serif;
-            font-size: 18px;
+            font-size: var(--font-size);
             line-height: 1.6;
-            background: #fff;
-            color: #000;
+            background: var(--bg);
+            color: var(--text);
             max-width: 100%;
             padding: 10px;
         }
 
+        .container {
+            max-width: var(--max-width);
+            margin: 0 auto;
+        }
+
         .nav {
-            border-bottom: 1px solid #000;
+            border-bottom: 1px solid var(--border);
             padding-bottom: 10px;
             margin-bottom: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
         }
 
         .nav select {
             font-size: 16px;
             padding: 8px;
-            border: 2px solid #000;
-            background: #fff;
-            width: 100%;
+            border: 2px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            flex: 1;
             font-family: Georgia, serif;
         }
 
+        .menu-btn {
+            background: var(--bg);
+            border: 2px solid var(--border);
+            color: var(--text);
+            font-size: 20px;
+            width: 44px;
+            height: 44px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .menu-btn:active {
+            background: var(--text);
+            color: var(--bg);
+        }
+
+        .menu-dropdown {
+            display: none;
+            position: absolute;
+            top: 60px;
+            right: 10px;
+            background: var(--bg);
+            border: 2px solid var(--border);
+            padding: 10px;
+            min-width: 220px;
+            z-index: 100;
+        }
+
+        .menu-dropdown.open {
+            display: block;
+        }
+
+        .menu-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 5px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .menu-item:last-child {
+            border-bottom: none;
+        }
+
+        .menu-item label {
+            font-size: 14px;
+        }
+
+        .toggle {
+            position: relative;
+            width: 50px;
+            height: 26px;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--text-muted);
+            border-radius: 26px;
+            transition: 0.2s;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background: var(--bg);
+            border-radius: 50%;
+            transition: 0.2s;
+        }
+
+        .toggle input:checked + .toggle-slider {
+            background: var(--text);
+        }
+
+        .toggle input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        .size-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        .size-btn {
+            background: var(--bg);
+            border: 2px solid var(--border);
+            color: var(--text);
+            width: 36px;
+            height: 30px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .size-btn.active {
+            background: var(--text);
+            color: var(--bg);
+        }
+
+        .size-btn:active {
+            background: var(--text);
+            color: var(--bg);
+        }
+
         .header {
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid var(--border);
             padding-bottom: 10px;
             margin-bottom: 15px;
         }
 
         .meta {
             font-size: 14px;
-            color: #333;
+            color: var(--text-muted);
             margin-bottom: 5px;
         }
 
         .title {
-            font-size: 24px;
+            font-size: 1.4em;
             font-weight: bold;
             line-height: 1.3;
             margin-bottom: 10px;
         }
 
         .title-link {
-            color: #000;
+            color: var(--text);
             text-decoration: none;
         }
 
@@ -71,6 +224,7 @@
 
         .content {
             margin-bottom: 20px;
+            padding-bottom: 80px;
         }
 
         .content p {
@@ -92,9 +246,17 @@
             margin: 10px auto;
         }
 
+        [data-hideimages="true"] .content img {
+            display: none !important;
+        }
+
         .content a {
-            color: #000;
+            color: var(--text);
             text-decoration: underline;
+        }
+
+        [data-theme="dark"] .content img {
+            opacity: 0.9;
         }
 
         .controls {
@@ -102,12 +264,19 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background: #fff;
-            border-top: 2px solid #000;
+            background: var(--bg);
+            border-top: 2px solid var(--border);
             padding: 10px;
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
             gap: 5px;
+        }
+
+        .controls-inner {
+            display: flex;
+            gap: 5px;
+            width: 100%;
+            max-width: var(--max-width);
         }
 
         .controls form {
@@ -119,111 +288,219 @@
             padding: 15px 5px;
             font-size: 14px;
             font-weight: bold;
-            background: #fff;
-            border: 2px solid #000;
+            background: var(--bg);
+            color: var(--text);
+            border: 2px solid var(--border);
             cursor: pointer;
         }
 
         .controls button:active {
-            background: #000;
-            color: #fff;
+            background: var(--text);
+            color: var(--bg);
         }
 
         .empty {
             text-align: center;
             padding: 50px 20px;
-            font-size: 24px;
+            font-size: 1.4em;
         }
 
-        /* Keyboard nav hint */
         .hint {
             font-size: 11px;
             text-align: center;
-            color: #666;
+            color: var(--text-hint);
             margin-top: 5px;
-        }
-
-        /* Add padding at bottom for fixed controls */
-        .content {
-            padding-bottom: 80px;
         }
     </style>
 </head>
 <body>
-    <div class="nav">
-        <select onchange="window.location.href=this.value">
-            <option value="/" {% if not feed_filter %}selected{% endif %}>All Feeds ({{ total }} unread)</option>
-            {% for feed_id, title in subscriptions|dictsort(by='value') %}
-            <option value="/?feed={{ feed_id }}" {% if feed_filter == feed_id %}selected{% endif %}>{{ title }}</option>
-            {% endfor %}
-        </select>
+    <div class="container">
+        <div class="nav">
+            <select onchange="window.location.href=this.value">
+                <option value="/" {% if not feed_filter %}selected{% endif %}>All Feeds ({{ total }} unread)</option>
+                {% for feed_id, title in subscriptions|dictsort(by='value') %}
+                <option value="/?feed={{ feed_id }}" {% if feed_filter == feed_id %}selected{% endif %}>{{ title }}</option>
+                {% endfor %}
+            </select>
+            <button class="menu-btn" onclick="toggleMenu()" aria-label="Settings">&#9776;</button>
+        </div>
+
+        <div class="menu-dropdown" id="menu">
+            <div class="menu-item">
+                <label>Dark Mode</label>
+                <label class="toggle">
+                    <input type="checkbox" id="darkToggle" onchange="toggleDarkMode()">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="menu-item">
+                <label>Font Size</label>
+                <div class="size-buttons">
+                    <button class="size-btn" data-size="small" onclick="setFontSize('small')">S</button>
+                    <button class="size-btn" data-size="medium" onclick="setFontSize('medium')">M</button>
+                    <button class="size-btn" data-size="large" onclick="setFontSize('large')">L</button>
+                </div>
+            </div>
+            <div class="menu-item">
+                <label>Hide Images</label>
+                <label class="toggle">
+                    <input type="checkbox" id="hideImagesToggle" onchange="toggleHideImages()">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="menu-item">
+                <label>Limit Width</label>
+                <label class="toggle">
+                    <input type="checkbox" id="maxWidthToggle" onchange="toggleMaxWidth()">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        {% if entry %}
+        <div class="header">
+            <div class="meta">
+                {{ entry.feed_title }} &bull; {{ entry.published[:10] if entry.published else 'Unknown date' }}
+            </div>
+            <a href="{{ entry.url }}" target="_blank" class="title-link">
+                <div class="title">{{ entry.title or 'Untitled' }}</div>
+            </a>
+            <div class="progress">{{ position + 1 }} / {{ total }} unread</div>
+        </div>
+
+        <div class="content">
+            {{ entry.display_content | safe }}
+        </div>
+
+        {% else %}
+        <div class="empty">
+            &#10003; All caught up!<br>
+            <small>No unread articles{% if feed_filter %} in this feed{% endif %}</small>
+        </div>
+        {% endif %}
     </div>
 
     {% if entry %}
-    <div class="header">
-        <div class="meta">
-            {{ entry.feed_title }} &bull; {{ entry.published[:10] if entry.published else 'Unknown date' }}
-        </div>
-        <a href="{{ entry.url }}" target="_blank" class="title-link">
-            <div class="title">{{ entry.title or 'Untitled' }}</div>
-        </a>
-        <div class="progress">{{ position + 1 }} / {{ total }} unread</div>
-    </div>
-
-    <div class="content">
-        {{ entry.display_content | safe }}
-    </div>
-
     <div class="controls">
-        <form method="POST" action="/prev">
-            <input type="hidden" name="position" value="{{ position }}">
-            <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
-            <button type="submit">&larr; PREV</button>
-        </form>
+        <div class="controls-inner">
+            <form method="POST" action="/prev">
+                <input type="hidden" name="position" value="{{ position }}">
+                <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
+                <button type="submit">&larr; PREV</button>
+            </form>
 
-        <form method="POST" action="/mark_read_next">
-            <input type="hidden" name="entry_id" value="{{ entry.id }}">
-            <input type="hidden" name="position" value="{{ position }}">
-            <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
-            <button type="submit">&#10003; READ</button>
-        </form>
+            <form method="POST" action="/mark_read_next">
+                <input type="hidden" name="entry_id" value="{{ entry.id }}">
+                <input type="hidden" name="position" value="{{ position }}">
+                <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
+                <button type="submit">&#10003; READ</button>
+            </form>
 
-        <form method="POST" action="/star">
-            <input type="hidden" name="entry_id" value="{{ entry.id }}">
-            <input type="hidden" name="position" value="{{ position }}">
-            <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
-            <button type="submit">&#9733; STAR</button>
-        </form>
+            <form method="POST" action="/star">
+                <input type="hidden" name="entry_id" value="{{ entry.id }}">
+                <input type="hidden" name="position" value="{{ position }}">
+                <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
+                <button type="submit">&#9733; STAR</button>
+            </form>
 
-        <form method="POST" action="/skip">
-            <input type="hidden" name="position" value="{{ position }}">
-            <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
-            <button type="submit">SKIP &rarr;</button>
-        </form>
+            <form method="POST" action="/skip">
+                <input type="hidden" name="position" value="{{ position }}">
+                <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
+                <button type="submit">SKIP &rarr;</button>
+            </form>
+        </div>
     </div>
 
-    <div class="hint">Arrow keys: Left/Right to navigate, Enter to mark read</div>
+    <div class="container">
+        <div class="hint">Keys: ←/→ navigate, Enter mark read, S star, D dark mode</div>
+    </div>
+    {% endif %}
 
     <script>
+        // Settings
+        function toggleDarkMode() {
+            const isDark = document.getElementById('darkToggle').checked;
+            document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        }
+
+        function setFontSize(size) {
+            document.documentElement.setAttribute('data-fontsize', size);
+            localStorage.setItem('fontsize', size);
+            updateSizeButtons(size);
+        }
+
+        function updateSizeButtons(size) {
+            document.querySelectorAll('.size-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.size === size);
+            });
+        }
+
+        function toggleHideImages() {
+            const hide = document.getElementById('hideImagesToggle').checked;
+            document.documentElement.setAttribute('data-hideimages', hide ? 'true' : 'false');
+            localStorage.setItem('hideimages', hide ? 'true' : 'false');
+        }
+
+        function toggleMaxWidth() {
+            const limited = document.getElementById('maxWidthToggle').checked;
+            document.documentElement.setAttribute('data-maxwidth', limited ? 'limited' : 'full');
+            localStorage.setItem('maxwidth', limited ? 'limited' : 'full');
+        }
+
+        function loadSettings() {
+            // Theme
+            const theme = localStorage.getItem('theme') || 'light';
+            document.getElementById('darkToggle').checked = theme === 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+
+            // Font size
+            const fontsize = localStorage.getItem('fontsize') || 'medium';
+            document.documentElement.setAttribute('data-fontsize', fontsize);
+            updateSizeButtons(fontsize);
+
+            // Hide images
+            const hideimages = localStorage.getItem('hideimages') || 'false';
+            document.getElementById('hideImagesToggle').checked = hideimages === 'true';
+            document.documentElement.setAttribute('data-hideimages', hideimages);
+
+            // Max width
+            const maxwidth = localStorage.getItem('maxwidth') || 'full';
+            document.getElementById('maxWidthToggle').checked = maxwidth === 'limited';
+            document.documentElement.setAttribute('data-maxwidth', maxwidth);
+        }
+
+        // Menu
+        function toggleMenu() {
+            document.getElementById('menu').classList.toggle('open');
+        }
+
+        document.addEventListener('click', function(e) {
+            const menu = document.getElementById('menu');
+            const btn = document.querySelector('.menu-btn');
+            if (!menu.contains(e.target) && !btn.contains(e.target)) {
+                menu.classList.remove('open');
+            }
+        });
+
         // Keyboard navigation
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowLeft') {
-                document.querySelector('form[action="/prev"] button').click();
+                document.querySelector('form[action="/prev"] button')?.click();
             } else if (e.key === 'ArrowRight') {
-                document.querySelector('form[action="/skip"] button').click();
+                document.querySelector('form[action="/skip"] button')?.click();
             } else if (e.key === 'Enter') {
-                document.querySelector('form[action="/mark_read_next"] button').click();
+                document.querySelector('form[action="/mark_read_next"] button')?.click();
             } else if (e.key === 's' || e.key === 'S') {
-                document.querySelector('form[action="/star"] button').click();
+                document.querySelector('form[action="/star"] button')?.click();
+            } else if (e.key === 'd' || e.key === 'D') {
+                document.getElementById('darkToggle').checked = !document.getElementById('darkToggle').checked;
+                toggleDarkMode();
             }
         });
-    </script>
 
-    {% else %}
-    <div class="empty">
-        &#10003; All caught up!<br>
-        <small>No unread articles{% if feed_filter %} in this feed{% endif %}</small>
-    </div>
-    {% endif %}
+        // Init
+        loadSettings();
+    </script>
 </body>
 </html>

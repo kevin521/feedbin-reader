@@ -1,4 +1,4 @@
-# Feedbin Reader
+# Paperbin
 
 A minimal, e-ink optimized web reader for [Feedbin](https://feedbin.com) RSS with full two-way sync.
 
