@@ -141,7 +141,6 @@
             bottom: 0;
             background: var(--text-muted);
             border-radius: 26px;
-            transition: 0.2s;
         }
 
         .toggle-slider:before {
@@ -153,7 +152,6 @@
             bottom: 3px;
             background: var(--bg);
             border-radius: 50%;
-            transition: 0.2s;
         }
 
         .toggle input:checked + .toggle-slider {
@@ -279,7 +277,7 @@
             max-width: var(--max-width);
         }
 
-        .controls form {
+        .controls .btn-wrap {
             flex: 1;
         }
 
@@ -294,9 +292,14 @@
             cursor: pointer;
         }
 
-        .controls button:active {
+        .controls button:active,
+        .controls button.loading {
             background: var(--text);
             color: var(--bg);
+        }
+
+        .controls button:disabled {
+            opacity: 0.5;
         }
 
         .empty {
@@ -316,10 +319,10 @@
 <body>
     <div class="container">
         <div class="nav">
-            <select onchange="window.location.href=this.value">
-                <option value="/" {% if not feed_filter %}selected{% endif %}>All Feeds ({{ total }} unread)</option>
+            <select id="feedSelect" onchange="changeFeed(this.value)">
+                <option value="" {% if not feed_filter %}selected{% endif %}>All Feeds (<span id="totalCount">{{ total }}</span> unread)</option>
                 {% for feed_id, title in subscriptions|dictsort(by='value') %}
-                <option value="/?feed={{ feed_id }}" {% if feed_filter == feed_id %}selected{% endif %}>{{ title }}</option>
+                <option value="{{ feed_id }}" {% if feed_filter == feed_id %}selected{% endif %}>{{ title }}</option>
                 {% endfor %}
             </select>
             <button class="menu-btn" onclick="toggleMenu()" aria-label="Settings">&#9776;</button>
@@ -357,57 +360,45 @@
             </div>
         </div>
 
-        {% if entry %}
-        <div class="header">
-            <div class="meta">
-                {{ entry.feed_title }} &bull; {{ entry.published[:10] if entry.published else 'Unknown date' }}
+        <div id="articleContainer">
+            {% if entry %}
+            <div class="header">
+                <div class="meta">
+                    <span id="feedTitle">{{ entry.feed_title }}</span> &bull; <span id="articleDate">{{ entry.published[:10] if entry.published else 'Unknown date' }}</span>
+                </div>
+                <a href="{{ entry.url }}" target="_blank" class="title-link" id="articleLink">
+                    <div class="title" id="articleTitle">{{ entry.title or 'Untitled' }}</div>
+                </a>
+                <div class="progress"><span id="currentPos">{{ position + 1 }}</span> / <span id="totalUnread">{{ total }}</span> unread</div>
             </div>
-            <a href="{{ entry.url }}" target="_blank" class="title-link">
-                <div class="title">{{ entry.title or 'Untitled' }}</div>
-            </a>
-            <div class="progress">{{ position + 1 }} / {{ total }} unread</div>
-        </div>
 
-        <div class="content">
-            {{ entry.display_content | safe }}
+            <div class="content" id="articleContent">
+                {{ entry.display_content | safe }}
+            </div>
+            {% else %}
+            <div class="empty" id="emptyState">
+                &#10003; All caught up!<br>
+                <small>No unread articles{% if feed_filter %} in this feed{% endif %}</small>
+            </div>
+            {% endif %}
         </div>
-
-        {% else %}
-        <div class="empty">
-            &#10003; All caught up!<br>
-            <small>No unread articles{% if feed_filter %} in this feed{% endif %}</small>
-        </div>
-        {% endif %}
     </div>
 
     {% if entry %}
-    <div class="controls">
+    <div class="controls" id="controlsBar">
         <div class="controls-inner">
-            <form method="POST" action="/prev">
-                <input type="hidden" name="position" value="{{ position }}">
-                <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
-                <button type="submit">&larr; PREV</button>
-            </form>
-
-            <form method="POST" action="/mark_read_next">
-                <input type="hidden" name="entry_id" value="{{ entry.id }}">
-                <input type="hidden" name="position" value="{{ position }}">
-                <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
-                <button type="submit">&#10003; READ</button>
-            </form>
-
-            <form method="POST" action="/star">
-                <input type="hidden" name="entry_id" value="{{ entry.id }}">
-                <input type="hidden" name="position" value="{{ position }}">
-                <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
-                <button type="submit">&#9733; STAR</button>
-            </form>
-
-            <form method="POST" action="/skip">
-                <input type="hidden" name="position" value="{{ position }}">
-                <input type="hidden" name="feed_filter" value="{{ feed_filter or '' }}">
-                <button type="submit">SKIP &rarr;</button>
-            </form>
+            <div class="btn-wrap">
+                <button id="btnPrev" onclick="navigate('prev')">&larr; PREV</button>
+            </div>
+            <div class="btn-wrap">
+                <button id="btnRead" onclick="markReadAndNext()">&#10003; READ</button>
+            </div>
+            <div class="btn-wrap">
+                <button id="btnStar" onclick="starArticle()">&#9733; STAR</button>
+            </div>
+            <div class="btn-wrap">
+                <button id="btnSkip" onclick="navigate('next')">SKIP &rarr;</button>
+            </div>
         </div>
     </div>
 
@@ -417,6 +408,27 @@
     {% endif %}
 
     <script>
+        // State
+        let state = {
+            position: {{ position }},
+            total: {{ total }},
+            feedFilter: {{ feed_filter if feed_filter else 'null' }},
+            currentArticle: {% if entry %}{
+                id: {{ entry.id }},
+                title: {{ entry.title|tojson }},
+                url: {{ entry.url|tojson }},
+                feed_title: {{ entry.feed_title|tojson }},
+                published: {{ (entry.published[:10] if entry.published else 'Unknown date')|tojson }}
+            }{% else %}null{% endif %},
+            nextArticle: null,
+            loading: false
+        };
+
+        // Preload next article on page load
+        {% if entry and position + 1 < total %}
+        preloadNext();
+        {% endif %}
+
         // Settings
         function toggleDarkMode() {
             const isDark = document.getElementById('darkToggle').checked;
@@ -449,22 +461,18 @@
         }
 
         function loadSettings() {
-            // Theme
             const theme = localStorage.getItem('theme') || 'light';
             document.getElementById('darkToggle').checked = theme === 'dark';
             document.documentElement.setAttribute('data-theme', theme);
 
-            // Font size
             const fontsize = localStorage.getItem('fontsize') || 'medium';
             document.documentElement.setAttribute('data-fontsize', fontsize);
             updateSizeButtons(fontsize);
 
-            // Hide images
             const hideimages = localStorage.getItem('hideimages') || 'false';
             document.getElementById('hideImagesToggle').checked = hideimages === 'true';
             document.documentElement.setAttribute('data-hideimages', hideimages);
 
-            // Max width
             const maxwidth = localStorage.getItem('maxwidth') || 'full';
             document.getElementById('maxWidthToggle').checked = maxwidth === 'limited';
             document.documentElement.setAttribute('data-maxwidth', maxwidth);
@@ -483,16 +491,191 @@
             }
         });
 
+        // Feed filter
+        function changeFeed(feedId) {
+            window.location.href = feedId ? '/?feed=' + feedId : '/';
+        }
+
+        // AJAX Navigation
+        async function preloadNext() {
+            if (state.position + 1 >= state.total) return;
+
+            try {
+                const params = new URLSearchParams({ pos: state.position + 1 });
+                if (state.feedFilter) params.set('feed', state.feedFilter);
+
+                const res = await fetch('/api/article?' + params);
+                const data = await res.json();
+                if (data.article) {
+                    state.nextArticle = data.article;
+                }
+            } catch (e) {
+                console.error('Preload failed:', e);
+            }
+        }
+
+        function renderArticle(article, position, total) {
+            state.currentArticle = article;
+            state.position = position;
+            state.total = total;
+
+            document.getElementById('feedTitle').textContent = article.feed_title;
+            document.getElementById('articleDate').textContent = article.published;
+            document.getElementById('articleTitle').textContent = article.title || 'Untitled';
+            document.getElementById('articleLink').href = article.url;
+            document.getElementById('articleContent').innerHTML = article.content;
+            document.getElementById('currentPos').textContent = position + 1;
+            document.getElementById('totalUnread').textContent = total;
+
+            // Update feed dropdown count
+            const select = document.getElementById('feedSelect');
+            if (select.options[0]) {
+                select.options[0].textContent = 'All Feeds (' + total + ' unread)';
+            }
+
+            window.scrollTo(0, 0);
+
+            // Preload next
+            state.nextArticle = null;
+            preloadNext();
+        }
+
+        function showEmpty() {
+            document.getElementById('articleContainer').innerHTML =
+                '<div class="empty">&#10003; All caught up!<br><small>No unread articles' +
+                (state.feedFilter ? ' in this feed' : '') + '</small></div>';
+
+            const controls = document.getElementById('controlsBar');
+            if (controls) controls.style.display = 'none';
+
+            state.total = 0;
+            const select = document.getElementById('feedSelect');
+            if (select.options[0]) {
+                select.options[0].textContent = 'All Feeds (0 unread)';
+            }
+        }
+
+        function setLoading(loading) {
+            state.loading = loading;
+            ['btnPrev', 'btnRead', 'btnStar', 'btnSkip'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.disabled = loading;
+                    if (loading) btn.classList.add('loading');
+                    else btn.classList.remove('loading');
+                }
+            });
+        }
+
+        async function navigate(direction) {
+            if (state.loading) return;
+
+            const newPos = direction === 'next' ? state.position + 1 : state.position - 1;
+            if (newPos < 0 || newPos >= state.total) return;
+
+            // Use preloaded article if available
+            if (direction === 'next' && state.nextArticle) {
+                renderArticle(state.nextArticle, newPos, state.total);
+                return;
+            }
+
+            setLoading(true);
+            try {
+                const params = new URLSearchParams({ pos: newPos });
+                if (state.feedFilter) params.set('feed', state.feedFilter);
+
+                const res = await fetch('/api/article?' + params);
+                const data = await res.json();
+
+                if (data.article) {
+                    renderArticle(data.article, data.position, data.total);
+                } else {
+                    showEmpty();
+                }
+            } catch (e) {
+                console.error('Navigation failed:', e);
+                window.location.href = '/?pos=' + newPos + (state.feedFilter ? '&feed=' + state.feedFilter : '');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function markReadAndNext() {
+            if (state.loading || !state.currentArticle) return;
+
+            setLoading(true);
+            try {
+                // Mark as read (fire and forget)
+                fetch('/api/mark_read', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: state.currentArticle.id })
+                });
+
+                const newTotal = state.total - 1;
+
+                if (newTotal === 0) {
+                    showEmpty();
+                    setLoading(false);
+                    return;
+                }
+
+                // Use preloaded next article
+                if (state.nextArticle) {
+                    renderArticle(state.nextArticle, state.position, newTotal);
+                    setLoading(false);
+                    return;
+                }
+
+                // Fetch current position (now next article after removal)
+                const params = new URLSearchParams({ pos: state.position });
+                if (state.feedFilter) params.set('feed', state.feedFilter);
+
+                const res = await fetch('/api/article?' + params);
+                const data = await res.json();
+
+                if (data.article) {
+                    renderArticle(data.article, data.position, data.total);
+                } else {
+                    showEmpty();
+                }
+            } catch (e) {
+                console.error('Mark read failed:', e);
+                window.location.reload();
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function starArticle() {
+            if (!state.currentArticle) return;
+
+            const btn = document.getElementById('btnStar');
+            const origText = btn.textContent;
+
+            try {
+                await fetch('/api/star', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: state.currentArticle.id })
+                });
+                btn.textContent = '★ STARRED';
+                setTimeout(() => { btn.textContent = origText; }, 1000);
+            } catch (e) {
+                console.error('Star failed:', e);
+            }
+        }
+
         // Keyboard navigation
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowLeft') {
-                document.querySelector('form[action="/prev"] button')?.click();
+                navigate('prev');
             } else if (e.key === 'ArrowRight') {
-                document.querySelector('form[action="/skip"] button')?.click();
+                navigate('next');
             } else if (e.key === 'Enter') {
-                document.querySelector('form[action="/mark_read_next"] button')?.click();
+                markReadAndNext();
             } else if (e.key === 's' || e.key === 'S') {
-                document.querySelector('form[action="/star"] button')?.click();
+                starArticle();
             } else if (e.key === 'd' || e.key === 'D') {
                 document.getElementById('darkToggle').checked = !document.getElementById('darkToggle').checked;
                 toggleDarkMode();

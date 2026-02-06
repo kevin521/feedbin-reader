@@ -1,8 +1,10 @@
 import os
+import re
 import requests
 import trafilatura
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 from requests.auth import HTTPBasicAuth
+from html import unescape
 
 app = Flask(__name__)
 
@@ -34,6 +36,28 @@ def get_subscriptions():
     """Get all subscriptions with unread counts"""
     subs = api_get('/subscriptions.json')
     return {sub['feed_id']: sub['title'] for sub in subs}
+
+def html_to_text(html):
+    """Strip HTML tags and return plain text"""
+    if not html:
+        return ''
+    # Remove script and style elements
+    text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    # Replace br and p tags with newlines
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</p>', '\n\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</div>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</h[1-6]>', '\n\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</li>', '\n', text, flags=re.IGNORECASE)
+    # Remove all other tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Decode HTML entities
+    text = unescape(text)
+    # Normalize whitespace
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 @app.route('/')
 def index():
@@ -165,11 +189,60 @@ def prev():
     feed_filter = request.form.get('feed_filter', type=int)
     return redirect(url_for('index', pos=max(0, position - 1), feed=feed_filter))
 
+def get_entry_with_content(entry_id, subscriptions, text_only=False):
+    """Fetch an entry and its extracted content"""
+    entry = api_get(f'/entries/{entry_id}.json')
+
+    # Try to get extracted content for cleaner reading
+    extracted_content = None
+
+    # First try Feedbin's parser
+    if entry.get('extracted_content_url'):
+        try:
+            r = requests.get(entry['extracted_content_url'], timeout=10)
+            if r.status_code == 200:
+                extracted = r.json()
+                extracted_content = extracted.get('content')
+        except:
+            pass
+
+    # If Feedbin parser failed or returned empty, try trafilatura
+    if not extracted_content or len(extracted_content.strip()) < 100:
+        try:
+            downloaded = trafilatura.fetch_url(entry.get('url'))
+            if downloaded:
+                fallback_content = trafilatura.extract(downloaded, include_images=True, output_format='html')
+                if fallback_content and len(fallback_content) > 100:
+                    extracted_content = fallback_content
+        except:
+            pass
+
+    # Use extracted content if available, otherwise fall back to entry content
+    content = extracted_content if extracted_content else entry.get('content', '')
+
+    # Convert to plain text if requested
+    if text_only:
+        content = html_to_text(content)
+
+    feed_title = subscriptions.get(entry.get('feed_id'), 'Unknown')
+
+    return {
+        'id': entry['id'],
+        'title': entry.get('title', 'Untitled'),
+        'feed_id': entry.get('feed_id'),
+        'feed_title': feed_title,
+        'published': entry.get('published', '')[:10] if entry.get('published') else 'Unknown date',
+        'url': entry.get('url', ''),
+        'content': content
+    }
+
 @app.route('/api/article')
 def api_article():
-    """JSON API for e-ink readers"""
+    """JSON API for AJAX navigation. Add ?format=text for plain text content (smaller payload)."""
     feed_filter = request.args.get('feed', None, type=int)
     position = request.args.get('pos', 0, type=int)
+    preload = request.args.get('preload', 'false') == 'true'
+    text_only = request.args.get('format', '') == 'text'
 
     # Get subscriptions
     subscriptions = get_subscriptions()
@@ -183,7 +256,8 @@ def api_article():
             'total': 0,
             'position': 0,
             'article': None,
-            'feeds': [{'id': k, 'title': v} for k, v in subscriptions.items()]
+            'next_article': None,
+            'feed_filter': feed_filter
         })
 
     # Filter by feed if specified
@@ -202,58 +276,29 @@ def api_article():
             'total': 0,
             'position': 0,
             'article': None,
-            'feed_filter': feed_filter,
-            'feeds': [{'id': k, 'title': v} for k, v in subscriptions.items()]
+            'next_article': None,
+            'feed_filter': feed_filter
         })
 
     # Clamp position
     position = max(0, min(position, len(unread_ids) - 1))
 
-    # Fetch entry
+    # Fetch current entry
     entry_id = unread_ids[position]
-    entry = api_get(f'/entries/{entry_id}.json')
+    article = get_entry_with_content(entry_id, subscriptions, text_only=text_only)
 
-    # Get content (try extracted, then trafilatura, then raw)
-    content = None
-    if entry.get('extracted_content_url'):
-        try:
-            r = requests.get(entry['extracted_content_url'], timeout=10)
-            if r.status_code == 200:
-                extracted = r.json()
-                content = extracted.get('content')
-        except:
-            pass
-
-    if not content or len(content.strip()) < 100:
-        try:
-            downloaded = trafilatura.fetch_url(entry.get('url'))
-            if downloaded:
-                content = trafilatura.extract(downloaded, include_images=False, output_format='txt')
-        except:
-            pass
-
-    if not content:
-        # Strip HTML tags from raw content
-        import re
-        raw = entry.get('content', '')
-        content = re.sub(r'<[^>]+>', '', raw)
-
-    feed_title = subscriptions.get(entry.get('feed_id'), 'Unknown')
+    # Preload next article if requested and available
+    next_article = None
+    if preload and position + 1 < len(unread_ids):
+        next_entry_id = unread_ids[position + 1]
+        next_article = get_entry_with_content(next_entry_id, subscriptions, text_only=text_only)
 
     return jsonify({
         'total': len(unread_ids),
         'position': position,
         'feed_filter': feed_filter,
-        'article': {
-            'id': entry['id'],
-            'title': entry.get('title', 'Untitled'),
-            'feed_id': entry.get('feed_id'),
-            'feed': feed_title,
-            'date': entry.get('published', '')[:10] if entry.get('published') else '',
-            'url': entry.get('url', ''),
-            'content': content
-        },
-        'feeds': [{'id': k, 'title': v} for k, v in subscriptions.items()]
+        'article': article,
+        'next_article': next_article
     })
 
 @app.route('/api/mark_read', methods=['POST'])
